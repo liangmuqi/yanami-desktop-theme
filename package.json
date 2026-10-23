@@ -1,0 +1,15 @@
+{
+  "name": "yanami-desktop-theme",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Experimental Anna Yanami startup animation and appearance adapter for ChatGPT/Codex on Windows",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node scripts/check.cjs && node scripts/check-client-binding.cjs",
+    "preview": "node scripts/preview.cjs",
+    "release": "node scripts/package.cjs"
+  }
+}

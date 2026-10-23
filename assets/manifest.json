@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "assets": {
+    "cutout": {
+      "name": "比心",
+      "theme": "white",
+      "file": "anna-cutout.webp"
+    },
+    "peace": {
+      "name": "比耶",
+      "theme": "white",
+      "file": "anna-peace.webp"
+    },
+    "crown": {
+      "name": "王座",
+      "theme": "white",
+      "file": "anna-crown.webp"
+    },
+    "profile": {
+      "name": "侧颜",
+      "theme": "ink",
+      "file": "anna-profile.webp"
+    },
+    "scarf": {
+      "name": "围巾",
+      "theme": "ink",
+      "file": "anna-scarf.webp"
+    },
+    "sport": {
+      "name": "回眸",
+      "theme": "ink",
+      "file": "anna-sport.webp"
+    },
+    "smile": {
+      "name": "笑颜",
+      "theme": "ink",
+      "file": "anna-smile.webp"
+    }
+  }
+}
