@@ -1,5 +1,5 @@
 function installYanamiNative(assets,openings,gsap,timelines,startupId) {
-  if (window.__yanamiNative?.build==='approved-v3'&&window.__yanamiNative?.revision==='stable-v5') {window.__yanamiNative.startSession(startupId);return window.__yanamiNative.status();}
+  if (window.__yanamiNative?.build==='approved-v3'&&window.__yanamiNative?.revision==='stable-v7') {window.__yanamiNative.startSession(startupId);return window.__yanamiNative.status();}
   window.__yanamiNative?.remove();
   if(!document.body||!document.head)return {waitingForDocument:true};
   const composerSelector=':is(.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant])';
@@ -95,14 +95,14 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
   function toggleUsage(){if(playing||!visible||!ready)return;if(!usageBubble.hidden){closeUsage();return;}usageBubble.hidden=false;character.setAttribute('aria-expanded','true');host.style.zIndex='80';requestUsage();if(!matchMedia('(prefers-reduced-motion:reduce)').matches)usageEntrance=usageBubble.animate([{opacity:0,transform:'translate(8px,5px) scale(.94)'},{opacity:1,transform:'translate(0,0) scale(1.015)',offset:.78},{opacity:1,transform:'translate(0,0) scale(1)'}],{duration:240,easing:'cubic-bezier(.22,.72,.22,1)'});}
   const outsideUsage=e=>{if(!usageBubble.hidden&&!e.composedPath().includes(character)&&!e.composedPath().includes(usageBubble))closeUsage();};
   character.onclick=toggleUsage;character.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleUsage();}};q('usage-close').onclick=()=>closeUsage(true);q('usage-refresh').onclick=()=>requestUsage(true);document.addEventListener('pointerdown',outsideUsage,true);
-  let handoffWaitMs=0,handoffTimedOut=false,readinessTimer=null;
+  let handoffWaitMs=0,handoffTimedOut=false,readinessTimer=null,handoffImage=null,handoffImageReady=null,handoffDecodeWaitMs=0;
   function workbenchReady(){
     // Embedded browser frames and remote images may delay window.load long
     // after React has mounted an enabled editor. Gate on the native editor.
     const composers=[...document.querySelectorAll(composerSelector)];
     return composers.some(c=>{const r=c.getBoundingClientRect();if(r.width<160||r.height<35||c.closest('[inert],[aria-hidden="true"]'))return false;return [...c.querySelectorAll('textarea,input,[contenteditable="true"]')].some(e=>{const b=e.getBoundingClientRect();return b.width>40&&b.height>8&&!e.disabled&&e.getAttribute('aria-disabled')!=='true'&&getComputedStyle(e).visibility!=='hidden';});});
   }
-  const status=()=>({version:2,build:'approved-v3',motionEngine:'stable-v5',layoutRuns,installed:!removed,theme:prefs.theme,art:prefs.art,product:productName(),productMode:prefs.product,home,characterVisible:visible&&ready&&!playing,playing,playCount,autoplaySession:desiredStartup,approvedTimelines:true,openingPrepared:!!openingKey,awaitingComposer:!document.querySelector(composerSelector),workbenchReady:workbenchReady(),documentState:document.readyState,handoffWaitMs,handoffTimedOut,readinessDuringOpening:true});
+  const status=()=>({version:2,build:'approved-v3',motionEngine:'stable-v7',layoutRuns,installed:!removed,theme:prefs.theme,art:prefs.art,product:productName(),productMode:prefs.product,home,characterVisible:visible&&ready&&!playing,playing,playCount,autoplaySession:desiredStartup,approvedTimelines:true,openingPrepared:!!openingKey,awaitingComposer:!document.querySelector(composerSelector),workbenchReady:workbenchReady(),documentState:document.readyState,handoffWaitMs,handoffDecodeWaitMs,handoffTimedOut,readinessDuringOpening:true});
   function syncControls(){shadow.querySelectorAll('[data-theme]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.theme===prefs.theme));shadow.querySelectorAll('[data-art-choice]').forEach(b=>{b.hidden=assets[b.dataset.artChoice].theme!==prefs.theme;b.setAttribute('aria-pressed',b.dataset.artChoice===prefs.art);});q('show').checked=prefs.show;q('strength').value=prefs.strength;q('breath').checked=prefs.breath;q('product').value=prefs.product;character.dataset.breath=!!prefs.breath;}
   async function selectArt(){
     const id=prefs.art,generation=++artGeneration;ready=false;character.dataset.art=id;
@@ -164,7 +164,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
   }
   function schedule(){if(!frame&&!removed)frame=requestAnimationFrame(layout);}
   function clearIntro(preserveOpening=false){
-    animationToken++;clearTimeout(introTimer);clearTimeout(introSafetyTimer);clearTimeout(readinessTimer);refreshHandoff=null;cancelAnimationFrame(raf);if(preserveOpening!==true){timeline?.kill();timeline=null;openingKey=null;}
+    animationToken++;clearTimeout(introTimer);clearTimeout(introSafetyTimer);clearTimeout(readinessTimer);refreshHandoff=null;handoffImage=null;handoffImageReady=null;cancelAnimationFrame(raf);if(preserveOpening!==true){timeline?.kill();timeline=null;openingKey=null;}
     // Reveal the already decoded destination in the same rendering transaction,
     // before removing the bridge. Waiting for layout's next RAF leaves a blank frame.
     playing=false;openingPreparing=false;character.style.visibility=visible&&ready&&prefs.show?'visible':'hidden';
@@ -203,7 +203,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     if(window.__yanamiLaunchHold){
       // Decode, lay out text and upload the final portrait before the native
       // window is revealed. A timer bounds RAF waits in occluded windows.
-      q('intro').style.display='block';host.style.zIndex='2147483000';timeline.pause(prefs.theme==='ink'?3.15:2.75);
+      q('intro').style.display='block';host.style.zIndex='2147483000';timeline.pause(prefs.theme==='ink'?2.55:2.25);
       await Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,180))]);
       if(token!==animationToken||removed)return false;timeline.pause(0);
     }
@@ -212,9 +212,13 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
   async function play({automatic=false}={}){
     closeUsage();clearIntro(true);const token=animationToken;playing=true;handoffWaitMs=0;handoffTimedOut=false;character.dataset.handoff='true';homeCopy.style.display='none';introSafetyTimer=setTimeout(()=>{if(token!==animationToken)return;if(automatic)localStorage.setItem('yanami-native-last-startup',desiredStartup);clearIntro();},10000);
     let prepared=false;try{prepared=await prepareOpening();}catch{}if(!prepared||token!==animationToken||removed){if(token===animationToken)clearIntro();return;}layout(true);timeline.pause(0);
+    // Decode the bridge portrait while the opening plays, so the handoff
+    // never starts with a second full-size image decode.
+    handoffImage=document.createElement('img');handoffImage.alt='';handoffImage.src=image.currentSrc||image.src;
+    handoffImageReady=Promise.all([handoffImage.decode(),image.decode()]).catch(()=>{});handoffDecodeWaitMs=0;
     q('intro').style.display='block';host.style.zIndex='2147483000';playing=true;playCount++;character.style.visibility='hidden';
     if(automatic)localStorage.setItem('yanami-native-last-startup',desiredStartup);
-    const hold=prefs.theme==='ink'?3.15:2.75;
+    const hold=prefs.theme==='ink'?2.55:2.25,motionScale=.8;
     if(matchMedia('(prefers-reduced-motion:reduce)').matches){timeline.totalTime(hold,false);await new Promise(r=>setTimeout(r,650));if(token===animationToken)clearIntro();return;}
     // The native workbench loads while the opening is playing. Observe its
     // readiness concurrently so the opening does not add another full wait.
@@ -224,7 +228,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     // Native compositor animations keep portraits and lettering moving even
     // while the application's JS thread is occupied loading conversations.
     timeline.pause(hold);
-    const run=(selector,frames,duration,delay,easing='cubic-bezier(.22,.61,.36,1)',stagger=0)=>openingRoot.querySelectorAll(selector).forEach((el,i)=>animate(el,frames,{duration:duration*1000,delay:(delay+i*stagger)*1000,easing}));
+    const run=(selector,frames,duration,delay,easing='cubic-bezier(.22,.61,.36,1)',stagger=0)=>openingRoot.querySelectorAll(selector).forEach((el,i)=>animate(el,frames,{duration:duration*motionScale*1000,delay:(delay+i*stagger)*motionScale*1000,easing}));
     const reveal=(selector,y,duration,delay,stagger=0)=>run(selector,[{opacity:0,transform:'translateY('+y+'px)'},{opacity:1,transform:'translateY(0)'}],duration,delay,undefined,stagger);
     if(prefs.theme==='white'){
       run('.edition',[{opacity:0},{opacity:1}],.4,.12);reveal('h1',12,.55,.2);
@@ -250,8 +254,9 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     if(token!==animationToken)return;
     if(!visible||!prefs.show){await animate(q('intro'),[{opacity:1},{opacity:0}],{duration:400}).finished.catch(()=>{});if(token===animationToken)clearIntro();return;}
     const bridge=document.createElement('div');bridge.id='bridge';bridge.style.overflow='hidden';
-    const movingImage=document.createElement('img');movingImage.alt='';movingImage.src=image.src;movingImage.style.cssText='position:absolute;left:0;top:0;display:block;max-width:none;object-fit:fill;transform-origin:0 0;will-change:transform;';bridge.style.transformOrigin='0 0';bridge.style.willChange='transform,opacity';bridge.append(movingImage);shadow.append(bridge);
-    await Promise.all([movingImage.decode(),image.decode()]).catch(()=>{});if(token!==animationToken){bridge.remove();return;}
+    const movingImage=handoffImage||document.createElement('img');if(!movingImage.src)movingImage.src=image.currentSrc||image.src;movingImage.style.cssText='position:absolute;left:0;top:0;display:block;max-width:none;object-fit:fill;transform-origin:0 0;will-change:transform;';bridge.style.transformOrigin='0 0';bridge.style.willChange='transform,opacity';bridge.append(movingImage);shadow.append(bridge);
+    const decodeStarted=performance.now();await (handoffImageReady||movingImage.decode().catch(()=>{}));handoffDecodeWaitMs=Math.round(performance.now()-decodeStarted);if(token!==animationToken){bridge.remove();return;}
+    if(!movingImage.naturalWidth||!openingImage.naturalWidth||!image.naturalWidth){bridge.remove();clearIntro();return;}
     // Animate the painted image, not the element's letterboxed container. A
     // separate clip reproduces both the opening crop and native cover crop.
     function paintedRect(el){
@@ -260,23 +265,23 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
       return {left:r.left+(r.width-width)*factor(parts[0],.5),top:r.top+(r.height-height)*factor(parts[1],.5),width,height};
     }
     function fade(el){const mask=getComputedStyle(el).maskImage;if(!mask||mask==='none')return {start:100,end:1};const stops=[...mask.matchAll(/([\d.]+)%/g)].map(m=>+m[1]);return {start:stops.length>1?stops[stops.length-2]:stops[0]??90,end:0};}
-    layout(true);const openingClip=openingImage.closest('.art,.portrait')||openingImage,fromClip=openingClip.getBoundingClientRect(),from=paintedRect(openingImage),fromFade=fade(openingClip),fromOpacity=Number(getComputedStyle(openingClip).opacity)||1;
+    const openingClip=openingImage.closest('.art,.portrait')||openingImage,fromClip=openingClip.getBoundingClientRect(),from=paintedRect(openingImage),fromFade=fade(openingClip),fromOpacity=Number(getComputedStyle(openingClip).opacity)||1;
     Object.assign(bridge.style,{left:'0px',top:'0px',width:fromClip.width+'px',height:fromClip.height+'px'});movingImage.style.width=movingImage.naturalWidth+'px';movingImage.style.height=movingImage.naturalHeight+'px';
     const mix=(a,b,t)=>a+(b-a)*t;
     function frames(){
       const toClip=character.getBoundingClientRect(),to=paintedRect(image),toFade=fade(image),parent=[],child=[];
-      for(let i=0;i<=60;i++){
-        const t=i/60,eased=1-Math.pow(1-t,3),x=mix(fromClip.left,toClip.left,eased),y=mix(fromClip.top,toClip.top,eased),sx=mix(fromClip.width,toClip.width,eased)/fromClip.width,sy=mix(fromClip.height,toClip.height,eased)/fromClip.height;
+      for(let i=0;i<=30;i++){
+        const t=i/30,eased=1-Math.pow(1-t,3),x=mix(fromClip.left,toClip.left,eased),y=mix(fromClip.top,toClip.top,eased),sx=mix(fromClip.width,toClip.width,eased)/fromClip.width,sy=mix(fromClip.height,toClip.height,eased)/fromClip.height;
         parent.push({offset:t,transform:'translate3d('+x+'px,'+y+'px,0) scale('+sx+','+sy+')',opacity:mix(fromOpacity,prefs.strength/100,eased)});
         child.push({offset:t,transform:'translate3d('+(mix(from.left-fromClip.left,to.left-toClip.left,eased)/sx)+'px,'+(mix(from.top-fromClip.top,to.top-toClip.top,eased)/sy)+'px,0) scale('+(mix(from.width,to.width,eased)/movingImage.naturalWidth/sx)+','+(mix(from.height,to.height,eased)/movingImage.naturalHeight/sy)+')'});
       }
       const mask=f=>'linear-gradient(to bottom,#000 0%,#000 '+f.start+'%,rgba(0,0,0,'+f.end+') 100%)';
       return {parent,child,masks:[{maskImage:mask(fromFade)},{maskImage:mask(toFade)}],needsMask:fromFade.end!==1||toFade.end!==1};
     }
-    const motion=frames(),options={duration:780,easing:'linear'},parentMotion=animate(bridge,motion.parent,options),childMotion=animate(movingImage,motion.child,options);
+    const motion=frames(),options={duration:540,easing:'linear'},parentMotion=animate(bridge,motion.parent,options),childMotion=animate(movingImage,motion.child,options);
     if(motion.needsMask)animate(bridge,motion.masks,options);
     refreshHandoff=()=>{const updated=frames();parentMotion.effect.setKeyframes(updated.parent);childMotion.effect.setKeyframes(updated.child);};
-    openingImage.style.visibility='hidden';openingRoot.querySelectorAll('.copy,.footer,.identity').forEach(el=>animate(el,[{opacity:1},{opacity:0}],{duration:170}));animate(scene,[{opacity:1},{opacity:0}],{duration:480,easing:'ease-out'});animate(q('intro'),[{background:'#fff'},{background:'transparent'}],{duration:540,delay:110});
+    openingImage.style.visibility='hidden';openingRoot.querySelectorAll('.copy,.footer,.identity').forEach(el=>animate(el,[{opacity:1},{opacity:0}],{duration:170}));animate(scene,[{opacity:1},{opacity:0}],{duration:360,easing:'ease-out'});animate(q('intro'),[{background:'#fff'},{background:'transparent'}],{duration:440,delay:60});
     await Promise.all([parentMotion.finished,childMotion.finished]).catch(()=>{});if(token===animationToken)clearIntro();
   }
   function maybeAutoplay(){if(window.__yanamiLaunchHold||removed||playing||autoPending||!desiredStartup||document.visibilityState!=='visible'||localStorage.getItem('yanami-native-last-startup')===desiredStartup)return;if(prefs.product==='auto'&&!detectProduct()&&performance.now()-productWaitStarted<1500){clearTimeout(productTimer);productTimer=setTimeout(maybeAutoplay,100);return;}autoPending=true;play({automatic:true}).finally(()=>{autoPending=false;});}
@@ -298,7 +303,7 @@ function setTheme(theme){prefs.theme=theme;prefs.art=assets[prefs[theme+'Art']]?
   // checks and skip all layout writes while geometry and page state agree.
   const observer=new MutationObserver(()=>{if(!mutationTimer&&!removed)mutationTimer=setTimeout(()=>{mutationTimer=0;schedule();},160);});observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-label','aria-hidden','hidden']});
   const resize=new ResizeObserver(schedule);resize.observe(document.documentElement);
-  window.__yanamiNative={version:2,build:'approved-v3',revision:'stable-v5',status,remove,play,prepareOpening,startSession,setTheme,receiveUsage,receiveAsset};selectArt();schedule();maybeAutoplay();
+  window.__yanamiNative={version:2,build:'approved-v3',revision:'stable-v7',status,remove,play,prepareOpening,startSession,setTheme,receiveUsage,receiveAsset};selectArt();schedule();maybeAutoplay();
 
   return status();
 }
