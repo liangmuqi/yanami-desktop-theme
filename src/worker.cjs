@@ -52,7 +52,7 @@ async function apply(target){
   fs.writeFileSync(path.join(root,'window-shown.json'),JSON.stringify({at:new Date().toISOString(),applicationPid:activePid,singleRoot:shown.roots.length===1,visible:true,minimized:false}));
  }
  const c=connections.get(target.id)||await connect(target);
- const snapshot=await c.evaluate(`({ready:!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='stable-v7',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
+ const snapshot=await c.evaluate(`({ready:!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='stable-v8',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
  if(!snapshot?.ready)return {state:'waiting-for-main-window'};
  if(snapshot.disabled)return {state:'disabled-by-user'};
  if(!snapshot.installed){
