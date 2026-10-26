@@ -1,5 +1,5 @@
 function installYanamiNative(assets,openings,gsap,timelines,startupId) {
-  if (window.__yanamiNative?.build==='approved-v3'&&window.__yanamiNative?.revision==='stable-v8') {window.__yanamiNative.startSession(startupId);return window.__yanamiNative.status();}
+  if (window.__yanamiNative?.build==='approved-v3'&&window.__yanamiNative?.revision==='stable-v10') {window.__yanamiNative.startSession(startupId);return window.__yanamiNative.status();}
   window.__yanamiNative?.remove();
   if(!document.body||!document.head)return {waitingForDocument:true};
   const composerSelector=':is(.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant])';
@@ -102,7 +102,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     const composers=[...document.querySelectorAll(composerSelector)];
     return composers.some(c=>{const r=c.getBoundingClientRect();if(r.width<160||r.height<35||c.closest('[inert],[aria-hidden="true"]'))return false;return [...c.querySelectorAll('textarea,input,[contenteditable="true"]')].some(e=>{const b=e.getBoundingClientRect();return b.width>40&&b.height>8&&!e.disabled&&e.getAttribute('aria-disabled')!=='true'&&getComputedStyle(e).visibility!=='hidden';});});
   }
-  const status=()=>({version:2,build:'approved-v3',motionEngine:'stable-v8',layoutRuns,installed:!removed,theme:prefs.theme,art:prefs.art,product:productName(),productMode:prefs.product,home,characterVisible:visible&&ready&&!playing,playing,playCount,autoplaySession:desiredStartup,approvedTimelines:true,openingPrepared:!!openingKey,awaitingComposer:!document.querySelector(composerSelector),workbenchReady:workbenchReady(),documentState:document.readyState,handoffWaitMs,handoffDecodeWaitMs,handoffTimedOut,readinessDuringOpening:true});
+  const status=()=>({version:2,build:'approved-v3',motionEngine:'stable-v10',layoutRuns,installed:!removed,theme:prefs.theme,art:prefs.art,product:productName(),productMode:prefs.product,home,characterVisible:visible&&ready&&!playing,playing,playCount,autoplaySession:desiredStartup,approvedTimelines:true,openingPrepared:!!openingKey,awaitingComposer:!document.querySelector(composerSelector),workbenchReady:workbenchReady(),documentState:document.readyState,handoffWaitMs,handoffDecodeWaitMs,handoffTimedOut,readinessDuringOpening:true});
   function syncControls(){shadow.querySelectorAll('[data-theme]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.theme===prefs.theme));shadow.querySelectorAll('[data-art-choice]').forEach(b=>{b.hidden=assets[b.dataset.artChoice].theme!==prefs.theme;b.setAttribute('aria-pressed',b.dataset.artChoice===prefs.art);});q('show').checked=prefs.show;q('strength').value=prefs.strength;q('breath').checked=prefs.breath;q('product').value=prefs.product;character.dataset.breath=!!prefs.breath;}
   async function selectArt(){
     const id=prefs.art,generation=++artGeneration;ready=false;character.dataset.art=id;
@@ -110,7 +110,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     localStorage.setItem('yanami-native-theme-v1',JSON.stringify(prefs));
     try{const src=await ensureAsset(id);if(removed||generation!==artGeneration)return;image.src=src;await image.decode();if(removed||generation!==artGeneration)return;ready=true;geometryRevision++;schedule();}catch{if(generation===artGeneration){ready=false;schedule();}}
   }
-  let lastLayout=null,layoutRuns=0,mutationTimer=0,observedMain=null,panelResizeTimer=0;
+  let lastLayout=null,layoutRuns=0,mutationTimer=0,observedMain=null,panelResizeTimer=0,homeCandidateSince=0,homeTimer=0;
   function positionTools(){
     const tools=q('tools');if(!tools)return;const r=tools.getBoundingClientRect();if(!r.width)return;let left=innerWidth-220-r.width;
     const obstacles=[...document.querySelectorAll('button,[role="button"]')].map(e=>e.getBoundingClientRect()).filter(b=>b.width>0&&b.height>0&&b.bottom>r.top&&b.top<r.bottom);
@@ -128,11 +128,17 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     // Observe its outer box, which is unaffected by our own right padding.
     if(main!==observedMain){if(observedMain)resize.unobserve(observedMain);observedMain=main;if(main)resize.observe(main,{box:'border-box'});}
     const messages=!!main?.querySelector(messageSelector);
-    const signature=()=>{const c=composer?.getBoundingClientRect(),m=main?.getBoundingClientRect();return [innerWidth,innerHeight,c?.x,c?.width,m?.x,m?.width,messages,ready,prefs.show,prefs.strength,prefs.theme,prefs.art,playing].join(':');};
+    const selectedConversation=!!document.querySelector('aside.app-shell-left-panel [role="button"][aria-current="page"]');
+    const homeCandidate=!!(composer&&main&&!messages&&!selectedConversation);
+    if(!homeCandidate){homeCandidateSince=0;clearTimeout(homeTimer);homeTimer=0;}
+    else if(!homeCandidateSince)homeCandidateSince=performance.now();
+    const homeReady=homeCandidate&&performance.now()-homeCandidateSince>=180;
+    if(homeCandidate&&!homeReady&&!homeTimer)homeTimer=setTimeout(()=>{homeTimer=0;schedule();},180);
+    const signature=()=>{const c=composer?.getBoundingClientRect(),m=main?.getBoundingClientRect();return [innerWidth,innerHeight,c?.x,c?.width,m?.x,m?.width,messages,selectedConversation,homeReady,ready,prefs.show,prefs.strength,prefs.theme,prefs.art,playing].join(':');};
     const inputSignature=signature();
     if(force!==true&&lastLayout?.main===main&&lastLayout?.composer===composer&&lastLayout?.signature===inputSignature){positionTools();if(!usageBubble.hidden)positionUsage();maybeAutoplay();return;}
     layoutRuns++;restoreMarks();
-    home=!!(composer&&main&&!messages);visible=false;
+    home=homeReady;visible=false;
     if(composer&&main&&prefs.show){
       const before=main.getBoundingClientRect();
       const available=innerWidth-before.left;
@@ -291,7 +297,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
   }
   function maybeAutoplay(){if(window.__yanamiLaunchHold||removed||playing||autoPending||!desiredStartup||document.visibilityState!=='visible'||localStorage.getItem('yanami-native-last-startup')===desiredStartup)return;if(prefs.product==='auto'&&!detectProduct()&&performance.now()-productWaitStarted<1500){clearTimeout(productTimer);productTimer=setTimeout(maybeAutoplay,100);return;}autoPending=true;play({automatic:true}).finally(()=>{autoPending=false;});}
   function startSession(id){if(id&&id!==desiredStartup){desiredStartup=id;productWaitStarted=performance.now();}maybeAutoplay();}
-  function remove(){removed=true;clearTimeout(mutationTimer);clearTimeout(panelResizeTimer);for(const request of assetRequests.values()){clearTimeout(request.timer);request.reject(Error('removed'));}assetRequests.clear();clearTimeout(productTimer);closeUsage();document.removeEventListener('pointerdown',outsideUsage,true);clearIntro();observer.disconnect();resize.disconnect();restoreMarks();for(const[el,[value,priority]]of originalReserve)value?el.style.setProperty('--yanami-reserve',value,priority):el.style.removeProperty('--yanami-reserve');for(const[el,vars]of originalVariables)for(const[name,[value,priority]]of vars)value?el.style.setProperty(name,value,priority):el.style.removeProperty(name);cancelAnimationFrame(frame);document.removeEventListener('keydown',key);document.removeEventListener('visibilitychange',schedule);window.removeEventListener('resize',resized);host.remove();style.remove();delete window.__yanamiNative;}
+  function remove(){removed=true;clearTimeout(mutationTimer);clearTimeout(panelResizeTimer);clearTimeout(homeTimer);for(const request of assetRequests.values()){clearTimeout(request.timer);request.reject(Error('removed'));}assetRequests.clear();clearTimeout(productTimer);closeUsage();document.removeEventListener('pointerdown',outsideUsage,true);clearIntro();observer.disconnect();resize.disconnect();restoreMarks();for(const[el,[value,priority]]of originalReserve)value?el.style.setProperty('--yanami-reserve',value,priority):el.style.removeProperty('--yanami-reserve');for(const[el,vars]of originalVariables)for(const[name,[value,priority]]of vars)value?el.style.setProperty(name,value,priority):el.style.removeProperty(name);cancelAnimationFrame(frame);document.removeEventListener('keydown',key);document.removeEventListener('visibilitychange',schedule);window.removeEventListener('resize',resized);host.remove();style.remove();delete window.__yanamiNative;}
   const key=e=>{if(e.key==='Escape'){if(!usageBubble.hidden)closeUsage(true);else clearIntro();}};
 function setTheme(theme){prefs.theme=theme;prefs.art=assets[prefs[theme+'Art']]?.theme===theme?prefs[theme+'Art']:theme==='white'?'cutout':'profile';ready=false;selectArt();}
   for(const[id,asset]of Object.entries(assets)){const b=document.createElement('button');b.dataset.artChoice=id;const thumb=document.createElement('img');thumb.loading='lazy';if(asset.src)thumb.src=asset.src;thumb.alt='';const label=document.createElement('span');label.textContent=asset.name;b.append(thumb,label);b.onclick=()=>{prefs.art=id;prefs[prefs.theme+'Art']=id;ready=false;selectArt();};shadow.querySelector('.characters').append(b);}
@@ -306,13 +312,17 @@ function setTheme(theme){prefs.theme=theme;prefs.art=assets[prefs[theme+'Art']]?
   // Observe structural route/composer changes, never user text or input values.
   // Streamed text may mutate hundreds of nodes per second. Coalesce route
   // checks and skip all layout writes while geometry and page state agree.
-  const observer=new MutationObserver(()=>{if(!mutationTimer&&!removed)mutationTimer=setTimeout(()=>{mutationTimer=0;schedule();},160);});observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-label','aria-hidden','hidden']});
+  const observer=new MutationObserver(records=>{
+    if(removed)return;
+    if(records.some(record=>record.attributeName==='aria-current')){clearTimeout(mutationTimer);mutationTimer=0;schedule();return;}
+    if(!mutationTimer)mutationTimer=setTimeout(()=>{mutationTimer=0;schedule();},160);
+  });observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-label','aria-hidden','aria-current','hidden']});
   const resize=new ResizeObserver(entries=>{
     if(entries.some(entry=>entry.target===observedMain)){
       clearTimeout(panelResizeTimer);panelResizeTimer=setTimeout(()=>{panelResizeTimer=0;schedule();},100);
     }else schedule();
   });resize.observe(document.documentElement);
-  window.__yanamiNative={version:2,build:'approved-v3',revision:'stable-v8',status,remove,play,prepareOpening,startSession,setTheme,receiveUsage,receiveAsset};selectArt();schedule();maybeAutoplay();
+  window.__yanamiNative={version:2,build:'approved-v3',revision:'stable-v10',status,remove,play,prepareOpening,startSession,setTheme,receiveUsage,receiveAsset};selectArt();schedule();maybeAutoplay();
 
   return status();
 }
