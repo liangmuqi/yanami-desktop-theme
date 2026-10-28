@@ -19,7 +19,6 @@ $taskName='YanamiTheme-Recovery'
 $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 $foreignTask=$existing -and -not (@($existing.Actions|Where-Object {$_.Arguments -like ('*'+$target+'*')}).Count)
 if($CheckOnly){[ordered]@{mode='check-only';writes=$false;applicationVersion=[string]$package.Version;nodeVersion=(& $node --version);installDirectory=$target;existingUnmanagedThemeTask=[bool]$foreignTask;port=$Port}|ConvertTo-Json;return}
-throw 'Installation is temporarily disabled: the current startup entry has a reported hang and has not passed cold-start validation. Existing installs are not modified.'
 if($foreignTask){throw 'Another development/theme installation owns YanamiTheme-Recovery. Disable that installation before installing this package.'}
 $running=@(Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'"|Where-Object {$_.ExecutablePath -eq $exe -and $_.CommandLine -notmatch '--type='})
 if($running.Count){throw 'Save your work and fully quit ChatGPT/Codex before installation. The installer will not close it for you.'}
@@ -32,7 +31,7 @@ foreach($file in @('Install.ps1','Uninstall.ps1','README.md','LICENSE','THIRD_PA
 $state=Join-Path $target 'state';$bin=Join-Path $target 'bin'
 New-Item -ItemType Directory -Path $state,$bin -Force|Out-Null
 Remove-Item -LiteralPath (Join-Path $state 'stop') -ErrorAction SilentlyContinue
-foreach($name in @('ConnectionInfo')){
+foreach($name in @('ConnectionInfo','PackageActivator')){
  & $compiler /nologo /target:exe /reference:System.Management.dll ('/out:'+(Join-Path $bin ($name+'.exe'))) (Join-Path $target ('native\'+$name+'.cs'))
  if($LASTEXITCODE -ne 0){throw ('Could not compile '+$name+'. No client installation files were changed.')}
 }
@@ -42,10 +41,14 @@ $config=[ordered]@{packageFullName=$package.PackageFullName;executable=$exe;appI
 $config|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $state 'worker-config.json') -Encoding utf8
 $link=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $target 'ChatGPT.lnk'))
 $link.TargetPath=Join-Path $bin 'ThemeEntry.exe';$link.WorkingDirectory=$target;$link.Description='ChatGPT'
-Add-Type -AssemblyName System.Drawing
-$icon=[System.Drawing.Icon]::ExtractAssociatedIcon($exe)
-$stream=[IO.File]::Create((Join-Path $bin 'ChatGPT.ico'))
-try{$icon.Save($stream)}finally{$stream.Dispose();$icon.Dispose()}
+$iconPng=Join-Path $package.InstallLocation 'assets\Square44x44Logo.targetsize-256_altform-unplated.png'
+$iconBytes=[IO.File]::ReadAllBytes($iconPng)
+$writer=[IO.BinaryWriter]::new([IO.File]::Create((Join-Path $bin 'ChatGPT.ico')))
+try {
+ $writer.Write([uint16]0);$writer.Write([uint16]1);$writer.Write([uint16]1)
+ $writer.Write([byte]0);$writer.Write([byte]0);$writer.Write([byte]0);$writer.Write([byte]0)
+ $writer.Write([uint16]1);$writer.Write([uint16]32);$writer.Write([uint32]$iconBytes.Length);$writer.Write([uint32]22);$writer.Write($iconBytes)
+} finally {$writer.Dispose()}
 $link.IconLocation=(Join-Path $bin 'ChatGPT.ico')+',0';$link.Save()
 $service=New-Object -ComObject Schedule.Service;$service.Connect();$definition=$service.NewTask(0)
 $definition.RegistrationInfo.Description='Yanami appearance adapter. Never closes or restarts the official client.'

@@ -26,7 +26,7 @@ powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File .\Install.ps1 -Che
 2. 双击 `Install.cmd`，在普通用户会话中运行。
 3. 安装器发现当前官方包、校验签名、编译连接检查和统一启动程序，并注册当前用户后台任务。
 4. 打开安装目录，右键 `ChatGPT.lnk` → 固定到开始，然后取消原先那个 ChatGPT 的固定。不要保留两个固定图标。
-5. Nexus 中编辑已有 ChatGPT 项目，类型设为程序，目标改为安装目录内 `ChatGPT.lnk`；清除原来的 AppsFolder / 旧版本目标。
+5. Nexus 中编辑已有 ChatGPT 项目，类型设为程序，目标直接改为安装目录内 `bin/ThemeEntry.exe`，图标使用 `bin/ChatGPT.ico`；清除原来的 AppsFolder / 旧版本目标。
 6. 从替换后的固定图标启动。后台程序不会为了接入主题关闭或重启应用。
 
 安装位置：`%LOCALAPPDATA%\YanamiDesktopTheme`。当前用户后台任务名称：`YanamiTheme-Recovery`。安装器只在此安装目录内生成 `ChatGPT.lnk`，不会自动新增桌面或开始菜单图标。Windows 需要通过界面执行固定操作。

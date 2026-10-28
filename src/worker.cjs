@@ -11,8 +11,20 @@ let stopping=false,lastReport='',activePid=null,failures=0;
 let clientValidated=false;
 let wakeCurrent=null;
 function wake(){if(wakeCurrent)wakeCurrent();}
-function idle(ms){return new Promise(resolve=>{const finish=()=>{clearTimeout(timer);wakeCurrent=null;resolve();};const timer=setTimeout(finish,ms);wakeCurrent=finish;});}
+function idle(ms){if(requestPending)return Promise.resolve();return new Promise(resolve=>{const finish=()=>{clearTimeout(timer);wakeCurrent=null;resolve();};const timer=setTimeout(finish,ms);wakeCurrent=finish;});}
 const connections=new Map();
+const requestFile=path.join(root,'launch-request.json');
+let lastLaunchId;try{lastLaunchId=JSON.parse(fs.readFileSync(requestFile,'utf8')).id;}catch{}
+let requestPending=false;
+const launchWatcher=fs.watch(root,(_,name)=>{if(name==='launch-request.json'){requestPending=true;wake();}});
+async function handleLaunchRequest(){
+ if(!requestPending)return;requestPending=false;
+ let request;try{request=JSON.parse(fs.readFileSync(requestFile,'utf8'));}catch{return;}
+ if(!request.id||request.id===lastLaunchId)return;lastLaunchId=request.id;
+ await execFile(path.join(__dirname,'../bin/PackageActivator.exe'),[config.appId,'--remote-debugging-address=127.0.0.1 --remote-debugging-port='+config.port,path.join(root,'broker-activation.json')],{windowsHide:true,timeout:15000});
+ fs.writeFileSync(path.join(root,'launch-handled.json'),JSON.stringify({id:request.id,at:new Date().toISOString(),workerPid:process.pid}));
+}
+
 const binding=require('./client-binding.cjs').createBinding({config,configPath:path.join(root,'worker-config.json'),resolverScript:path.join(__dirname,'../scripts/resolve-client.ps1')});
 async function refreshClient(force=false){
  let result;try{result=await binding.refresh(force);clientValidated=true;}catch(error){clientValidated=false;throw error;}if(!result.changed)return;
@@ -42,7 +54,7 @@ async function connect(target){
 }
 async function apply(target){
  const c=connections.get(target.id)||await connect(target);
- const snapshot=await c.evaluate(`({ready:!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='stable-v10',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
+ const snapshot=await c.evaluate(`({ready:document.visibilityState==='visible'&&!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='stable-v10',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
  if(!snapshot?.ready)return {state:'waiting-for-main-window'};
  if(snapshot.disabled)return {state:'disabled-by-user'};
  if(!snapshot.installed){
@@ -65,12 +77,13 @@ async function observeUnavailable(){
 }
 function retryDelay(state,failures){return state==='debug'?Math.min(2000,300+failures*150):state==='closed'?1500:5000;}
 async function main(){
- const lock=path.join(root,'worker-lock.json');if(fs.existsSync(lock)){try{const old=JSON.parse(fs.readFileSync(lock));const live=await ps(`$p=Get-CimInstance Win32_Process -Filter 'ProcessId=${Number(old.pid)}' -ErrorAction SilentlyContinue;if($p -and $p.Name -eq 'node.exe' -and $p.CommandLine.Contains('${__filename.replaceAll("'","''")}')){'live'}`);if(live==='live')return;}catch{}}
+ const lock=path.join(root,'worker-lock.json');if(fs.existsSync(lock)){try{const old=JSON.parse(fs.readFileSync(lock));const live=await ps(`$p=Get-CimInstance Win32_Process -Filter 'ProcessId=${Number(old.pid)}' -ErrorAction SilentlyContinue;if($p -and $p.Name -eq 'node.exe' -and $p.CommandLine.Contains('${__filename.replaceAll("'","''")}')){'live'}`);if(live==='live'){launchWatcher.close();return;}}catch{}}
  fs.writeFileSync(lock,JSON.stringify({pid:process.pid}));
  try{await refreshClient(true);}catch(error){report({state:'paused-client-validation',error:error.message});}
  try{while(!stopping&&!fs.existsSync(path.join(root,'stop'))){
   try{
    if(!clientValidated)await refreshClient();
+   await handleLaunchRequest();
    const response=await fetch('http://127.0.0.1:'+config.port+'/json/list',{signal:AbortSignal.timeout(1500)});if(!response.ok)throw Error('Endpoint unavailable.');const list=await response.json();
    if(activePid===null)activePid=await verifyOwner();
    const targets=list.filter(t=>{try{const u=new URL(t.url);return t.type==='page'&&u.protocol==='app:'&&u.hostname==='-'&&u.pathname==='/index.html'&&!/avatar|quick.chat|detached|mini|popover|notification|spotlight/i.test(u.searchParams.get('initialRoute')||'');}catch{return false;}});
@@ -82,6 +95,6 @@ async function main(){
    let state='other';try{await refreshClient();state=await observeUnavailable();}catch(connectionError){report({state:'paused',error:connectionError.message,automaticRestarts:0});}
    await idle(retryDelay(state,failures));
   }
- }}finally{for(const c of connections.values())c.ws.close();try{if(JSON.parse(fs.readFileSync(lock)).pid===process.pid)fs.rmSync(lock);}catch{}}
+ }}finally{launchWatcher.close();for(const c of connections.values())c.ws.close();try{if(JSON.parse(fs.readFileSync(lock)).pid===process.pid)fs.rmSync(lock);}catch{}}
 }
 process.on('SIGTERM',()=>{stopping=true;wake();});main().catch(error=>{report({state:'worker-error',error:error.message});process.exitCode=1;});
