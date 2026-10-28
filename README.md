@@ -6,6 +6,8 @@ Anna Yanami inspired startup animations and desktop themes for ChatGPT / Codex o
 
 > **实验性版本 · v0.1.0-alpha.1**。已取消后台关闭、重启客户端的机制，改由同一个入口一次启动官方应用；完整冷启动仍需实际验证。请先看 [兼容性与已知问题](docs/KNOWN_ISSUES.md)，不要把本地演示视为安装成功。
 
+> **安装暂停**：新的启动入口出现卡死反馈，尚未完成实际冷启动验证。安装脚本暂不进行安装；已安装用户应优先恢复官方入口。
+
 ## 效果
 
 | 白 · WHITE | 墨 · INK |

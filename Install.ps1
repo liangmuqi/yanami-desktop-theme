@@ -19,6 +19,7 @@ $taskName='YanamiTheme-Recovery'
 $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 $foreignTask=$existing -and -not (@($existing.Actions|Where-Object {$_.Arguments -like ('*'+$target+'*')}).Count)
 if($CheckOnly){[ordered]@{mode='check-only';writes=$false;applicationVersion=[string]$package.Version;nodeVersion=(& $node --version);installDirectory=$target;existingUnmanagedThemeTask=[bool]$foreignTask;port=$Port}|ConvertTo-Json;return}
+throw 'Installation is temporarily disabled: the current startup entry has a reported hang and has not passed cold-start validation. Existing installs are not modified.'
 if($foreignTask){throw 'Another development/theme installation owns YanamiTheme-Recovery. Disable that installation before installing this package.'}
 $running=@(Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'"|Where-Object {$_.ExecutablePath -eq $exe -and $_.CommandLine -notmatch '--type='})
 if($running.Count){throw 'Save your work and fully quit ChatGPT/Codex before installation. The installer will not close it for you.'}
