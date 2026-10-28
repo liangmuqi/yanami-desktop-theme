@@ -43,7 +43,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     [data-yanami-space] :is(.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant]){background:#fff!important;border-color:var(--yanami-border,#dedede)!important;box-shadow:0 6px 24px #20202004!important}
     [data-yanami-home] [data-yanami-composer]{position:fixed!important;left:var(--yanami-left)!important;top:var(--yanami-top)!important;bottom:auto!important;width:var(--yanami-width)!important;max-width:var(--yanami-width)!important;margin:0!important;z-index:10}
     [data-yanami-home] [data-yanami-composer] :is(.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant]){min-height:164px!important}
-    [data-yanami-home] [data-yanami-heading],[data-yanami-home] [data-testid="home-icon"]{visibility:hidden!important}
+    [data-yanami-home] [data-yanami-heading],[data-yanami-home] .heading-xl,[data-yanami-home] [data-testid="home-icon"]{visibility:hidden!important}
   `;document.head.append(style);
   const q=id=>shadow.getElementById(id),character=q('character'),image=character.querySelector('img');
   const homeCopy=document.createElement('div');homeCopy.id='home-copy';homeCopy.style.cssText='position:fixed;display:none;pointer-events:none;';homeCopy.innerHTML='<div style="font-size:11px;color:#8591a2;margin-bottom:22px">留一点安静，给此刻的想法。</div><div id="home-headline" style="font-size:30px;line-height:1.45;font-weight:500;letter-spacing:.2px">翻开一页，继续你的故事。</div><div style="font-size:12px;color:#8a95a3;margin-top:15px">把思绪落成文字，把想法慢慢写清。</div>';shadow.append(homeCopy);
@@ -155,7 +155,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
           mark(main,'data-yanami-home');const width=Math.min(740,available-reserve-(narrow?40:60)),left=before.left+(narrow?18:32),top=Math.max(240,innerHeight*.45);
           nativeVar(main,'--yanami-left',left+'px');nativeVar(main,'--yanami-width',width+'px');nativeVar(main,'--yanami-top',top+'px');
           mark(composer.closest('[class*="thread-body-max-width"]')||composer.parentElement,'data-yanami-composer');
-          mark(main.querySelector('h1,h2'),'data-yanami-heading');homeCopy.style.left=left+'px';homeCopy.style.top=(top-150)+'px';homeCopy.style.width=width+'px';
+          mark(main.querySelector('h1,h2,[role="heading"],.heading-xl'),'data-yanami-heading');homeCopy.style.left=left+'px';homeCopy.style.top=(top-150)+'px';homeCopy.style.width=width+'px';
           q('home-headline').textContent=prefs.theme==='white'?'一起写下，新的一页。':'翻开一页，继续你的故事。';q('home-headline').style.color=prefs.theme==='white'?'#285f9f':'#343434';
           q('home-headline').style.fontSize=narrow?'24px':'30px';
         }

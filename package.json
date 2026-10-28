@@ -1,6 +1,6 @@
 {
   "name": "yanami-desktop-theme",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "private": true,
   "description": "Experimental Anna Yanami startup animation and appearance adapter for ChatGPT/Codex on Windows",
   "license": "MIT",
