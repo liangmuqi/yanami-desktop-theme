@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node scripts/check.cjs && node scripts/check-client-binding.cjs && node scripts/check-passive-worker.cjs",
+    "test": "node scripts/check.cjs && node scripts/check-client-binding.cjs && node scripts/check-passive-worker.cjs && node scripts/check-connections.cjs",
     "preview": "node scripts/preview.cjs",
     "release": "node scripts/package.cjs"
   }
