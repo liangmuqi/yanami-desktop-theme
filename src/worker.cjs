@@ -7,22 +7,19 @@ fs.mkdirSync(root,{recursive:true});
 let config=JSON.parse(fs.readFileSync(path.join(root,'worker-config.json'),'utf8').replace(/^\uFEFF/,''));
 const buildPayload=require('./payload.cjs');
 const quotaBridge=fs.readFileSync(path.join(__dirname,'quota-bridge.js'),'utf8');
-const delay=ms=>new Promise(r=>setTimeout(r,ms));
 let stopping=false,lastReport='',activePid=null,failures=0;
-let revealPending=false,clientValidated=false;
+let clientValidated=false;
 let wakeCurrent=null;
 function wake(){if(wakeCurrent)wakeCurrent();}
 function idle(ms){return new Promise(resolve=>{const finish=()=>{clearTimeout(timer);wakeCurrent=null;resolve();};const timer=setTimeout(finish,ms);wakeCurrent=finish;});}
-const connections=new Map(),blockedRoots=new Set();
+const connections=new Map();
 const binding=require('./client-binding.cjs').createBinding({config,configPath:path.join(root,'worker-config.json'),resolverScript:path.join(__dirname,'../scripts/resolve-client.ps1')});
 async function refreshClient(force=false){
  let result;try{result=await binding.refresh(force);clientValidated=true;}catch(error){clientValidated=false;throw error;}if(!result.changed)return;
- for(const connection of connections.values())connection.ws.close();connections.clear();activePid=null;revealPending=false;config=result.config;
+ for(const connection of connections.values())connection.ws.close();connections.clear();activePid=null;config=result.config;
  fs.writeFileSync(path.join(root,'client-rebind.json'),JSON.stringify({at:new Date().toISOString(),previousPackage:result.previousPackage,packageFullName:config.packageFullName,version:result.version,signatureVerified:true},null,2));
  report({state:'client-version-rebound',version:result.version});
 }
-try{for(const key of JSON.parse(fs.readFileSync(path.join(root,'recovery-attempts.json'),'utf8')))blockedRoots.add(key);}catch{}
-function rememberRecovery(key){blockedRoots.add(key);fs.writeFileSync(path.join(root,'recovery-attempts.json'),JSON.stringify([...blockedRoots].slice(-200)));}
 function report(value){const text=JSON.stringify(value);if(text===lastReport)return;lastReport=text;fs.writeFileSync(path.join(root,'worker-status.json'),JSON.stringify({at:new Date().toISOString(),workerPid:process.pid,...value},null,2));}
 async function ps(code){const encoded=Buffer.from(code,'utf16le').toString('base64');return (await execFile(config.powershell,['-NoProfile','-NonInteractive','-EncodedCommand',encoded],{windowsHide:true,timeout:15000,maxBuffer:1024*1024})).stdout.trim();}
 async function inspect(){const r=await execFile(path.join(__dirname,'../bin/ConnectionInfo.exe'),[config.executable,String(config.port)],{windowsHide:true,timeout:5000});return JSON.parse(r.stdout.replace(/^\uFEFF/,''));}
@@ -42,15 +39,6 @@ async function connect(target){
  const connection={ws,evaluate};connections.set(target.id,connection);return connection;
 }
 async function apply(target){
- if(revealPending){
-  const info=await inspect();
-  if(!info.windows.some(w=>w.pid===activePid))return {state:'waiting-for-main-window'};
-  await execFile(path.join(__dirname,'../bin/WindowActivator.exe'),[config.appId,config.executable,String(activePid)],{windowsHide:true,timeout:5000}).catch(()=>{});
-  const shown=await inspect();
-  if(!shown.windows.some(w=>w.pid===activePid&&w.visible&&!w.minimized))return {state:'waiting-for-main-window'};
-  revealPending=false;
-  fs.writeFileSync(path.join(root,'window-shown.json'),JSON.stringify({at:new Date().toISOString(),applicationPid:activePid,singleRoot:shown.roots.length===1,visible:true,minimized:false}));
- }
  const c=connections.get(target.id)||await connect(target);
  const snapshot=await c.evaluate(`({ready:!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='stable-v10',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
  if(!snapshot?.ready)return {state:'waiting-for-main-window'};
@@ -64,19 +52,13 @@ async function apply(target){
  }
  return c.evaluate(`(()=>{const s=window.__yanamiNative?.status();return {state:'active',skin:s,composerCount:document.querySelectorAll('.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant]').length,globalInputBlocked:document.body.inert||document.documentElement.inert,hostPointerEvents:getComputedStyle(document.getElementById('yanami-native-theme')).pointerEvents};})()`);
 }
-async function recover(){
- // Detect a user launch first. A missing endpoint alone never triggers a restart.
- const items=await roots();if(!items.length){report({state:'idle-client-closed',automaticRestarts:0});return false;}if(items.length!==1){report({state:'paused-unexpected-instance-count',rootCount:items.length});return false;}
- const item=items[0],key=item.pid+':'+item.created;
- if(item.debug||item.custom||blockedRoots.has(key))return report({state:'paused-connection-unavailable',applicationPid:item.pid,restartSuppressed:true});
- if(!config.allowOneRecovery)return report({state:'needs-one-time-debug-start',applicationPid:item.pid});
- rememberRecovery(key);report({state:'recovering-original-once',applicationPid:item.pid});
- const next={...config,expectedPid:item.pid,expectedCreated:item.created};fs.writeFileSync(path.join(root,'probe-config.json'),JSON.stringify(next));
- await execFile(config.powershell,['-NoProfile','-NonInteractive','-WindowStyle','Hidden','-File',path.join(__dirname,'../scripts/recover-original.ps1')],{windowsHide:true,timeout:100000});
- const result=JSON.parse(fs.readFileSync(path.join(root,'probe-result.json'),'utf8').replace(/^\uFEFF/,''));
- if(result.portOpen)revealPending=true;
- if(!result.portOpen){for(const item of await roots())rememberRecovery(item.pid+':'+item.created);report({state:'paused-recovery-failed',reason:result.error,originalRestored:result.state==='normal-entry-restored-no-theme-installed'});}
- return result.portOpen;
+// Observe only: connection failure must never close, hide or restart the client.
+async function observeUnavailable(){
+ const items=await roots();
+ if(!items.length){report({state:'idle-client-closed',automaticRestarts:0});return;}
+ if(items.length!==1){report({state:'paused-unexpected-instance-count',rootCount:items.length,automaticRestarts:0});return;}
+ const item=items[0];
+ report({state:item.debug?'waiting-for-debug-connection':'original-running-without-theme-connection',applicationPid:item.pid,automaticRestarts:0});
 }
 async function main(){
  const lock=path.join(root,'worker-lock.json');if(fs.existsSync(lock)){try{const old=JSON.parse(fs.readFileSync(lock));const live=await ps(`$p=Get-CimInstance Win32_Process -Filter 'ProcessId=${Number(old.pid)}' -ErrorAction SilentlyContinue;if($p -and $p.Name -eq 'node.exe' -and $p.CommandLine.Contains('${__filename.replaceAll("'","''")}')){'live'}`);if(live==='live')return;}catch{}}
@@ -87,14 +69,14 @@ async function main(){
    if(!clientValidated)await refreshClient();
    const response=await fetch('http://127.0.0.1:'+config.port+'/json/list',{signal:AbortSignal.timeout(1500)});if(!response.ok)throw Error('Endpoint unavailable.');const list=await response.json();
    if(activePid===null)activePid=await verifyOwner();
-   const targets=list.filter(t=>{try{const u=new URL(t.url);return t.type==='page'&&u.protocol==='app:'&&u.hostname==='-'&&u.pathname==='/index.html'&&!/avatar|quick.chat|detached|mini|popover|notification/i.test(u.searchParams.get('initialRoute')||'');}catch{return false;}});
+   const targets=list.filter(t=>{try{const u=new URL(t.url);return t.type==='page'&&u.protocol==='app:'&&u.hostname==='-'&&u.pathname==='/index.html'&&!/avatar|quick.chat|detached|mini|popover|notification|spotlight/i.test(u.searchParams.get('initialRoute')||'');}catch{return false;}});
    const status=[];for(const target of targets)status.push(await apply(target));failures=0;report({state:status.some(s=>s.state==='active')?'active':'waiting-for-main-window',applicationPid:activePid,reports:status});
    const settling=!status.length||status.some(s=>s.state==='waiting-for-main-window'||s.skin?.playing);
    await idle(settling?200:4000);
   }catch(error){
    for(const c of connections.values())c.ws.close();connections.clear();activePid=null;failures++;
-   let recovered=false;try{await refreshClient();recovered=await recover();}catch(recoveryError){report({state:'paused',error:recoveryError.message});}
-   if(!recovered)await idle(800);
+   try{await refreshClient();await observeUnavailable();}catch(connectionError){report({state:'paused',error:connectionError.message,automaticRestarts:0});}
+   await idle(1000);
   }
  }}finally{for(const c of connections.values())c.ws.close();try{if(JSON.parse(fs.readFileSync(lock)).pid===process.pid)fs.rmSync(lock);}catch{}}
 }

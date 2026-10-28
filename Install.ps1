@@ -23,25 +23,36 @@ if($foreignTask){throw 'Another development/theme installation owns YanamiTheme-
 $running=@(Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'"|Where-Object {$_.ExecutablePath -eq $exe -and $_.CommandLine -notmatch '--type='})
 if($running.Count){throw 'Save your work and fully quit ChatGPT/Codex before installation. The installer will not close it for you.'}
 if($existing){Stop-ScheduledTask -TaskName $taskName;Start-Sleep -Milliseconds 600}
+$workerPath=Join-Path $target 'src\worker.cjs'
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {$_.CommandLine -like ('*"'+$workerPath+'"*')} | ForEach-Object {Stop-Process -Id $_.ProcessId}
 New-Item -ItemType Directory -Path $target -Force|Out-Null
 foreach($folder in @('src','assets','native','scripts','vendor','docs')){Copy-Item -LiteralPath (Join-Path $source $folder) -Destination $target -Recurse -Force}
 foreach($file in @('Install.ps1','Uninstall.ps1','README.md','LICENSE','THIRD_PARTY_NOTICES.md','package.json')){Copy-Item -LiteralPath (Join-Path $source $file) -Destination $target -Force}
 $state=Join-Path $target 'state';$bin=Join-Path $target 'bin'
 New-Item -ItemType Directory -Path $state,$bin -Force|Out-Null
 Remove-Item -LiteralPath (Join-Path $state 'stop') -ErrorAction SilentlyContinue
-foreach($name in @('ConnectionInfo','PackageActivator','WindowActivator')){
+foreach($name in @('ConnectionInfo')){
  & $compiler /nologo /target:exe /reference:System.Management.dll ('/out:'+(Join-Path $bin ($name+'.exe'))) (Join-Path $target ('native\'+$name+'.cs'))
  if($LASTEXITCODE -ne 0){throw ('Could not compile '+$name+'. No client installation files were changed.')}
 }
-$config=[ordered]@{packageFullName=$package.PackageFullName;executable=$exe;appId=$package.PackageFamilyName+'!App';port=$Port;activator=(Join-Path $bin 'PackageActivator.exe');powershell=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe');node=$node;taskName=$taskName;allowOneRecovery=$true}
+& $compiler /nologo /target:winexe /reference:System.Management.dll /reference:System.Web.Extensions.dll /reference:Microsoft.CSharp.dll ('/out:'+(Join-Path $bin 'ThemeEntry.exe')) (Join-Path $target 'native\ThemeEntry.cs')
+if($LASTEXITCODE -ne 0){throw 'Could not compile ThemeEntry.'}
+$config=[ordered]@{packageFullName=$package.PackageFullName;executable=$exe;appId=$package.PackageFamilyName+'!App';port=$Port;powershell=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe');node=$node;taskName=$taskName;allowOneRecovery=$false}
 $config|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $state 'worker-config.json') -Encoding utf8
+$link=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $target 'ChatGPT.lnk'))
+$link.TargetPath=Join-Path $bin 'ThemeEntry.exe';$link.WorkingDirectory=$target;$link.Description='ChatGPT'
+Add-Type -AssemblyName System.Drawing
+$icon=[System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+$stream=[IO.File]::Create((Join-Path $bin 'ChatGPT.ico'))
+try{$icon.Save($stream)}finally{$stream.Dispose();$icon.Dispose()}
+$link.IconLocation=(Join-Path $bin 'ChatGPT.ico')+',0';$link.Save()
 $service=New-Object -ComObject Schedule.Service;$service.Connect();$definition=$service.NewTask(0)
-$definition.RegistrationInfo.Description='Experimental Yanami appearance recovery for the original ChatGPT window.'
+$definition.RegistrationInfo.Description='Yanami appearance adapter. Never closes or restarts the official client.'
 $definition.Principal.UserId=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;$definition.Principal.LogonType=3;$definition.Principal.RunLevel=0
 $definition.Settings.Hidden=$true;$definition.Settings.DisallowStartIfOnBatteries=$false;$definition.Settings.StopIfGoingOnBatteries=$false;$definition.Settings.ExecutionTimeLimit='PT0S';$definition.Settings.MultipleInstances=2;$definition.Settings.RestartCount=2;$definition.Settings.RestartInterval='PT1M'
 $trigger=$definition.Triggers.Create(9);$trigger.UserId=$definition.Principal.UserId;$trigger.Enabled=$true
 $action=$definition.Actions.Create(0);$action.Path=Join-Path $env:SystemRoot 'System32\wscript.exe';$action.Arguments='//B //Nologo "'+(Join-Path $target 'scripts\run-hidden.vbs')+'" "'+$node+'" "'+(Join-Path $target 'src\worker.cjs')+'"';$action.WorkingDirectory=$target
 $task=$service.GetFolder('\').RegisterTaskDefinition($taskName,$definition,6,$null,$null,3,$null);$null=$task.Run($null)
-Write-Output 'Installed. Open the original ChatGPT icon. No extra shortcut was created.'
+Write-Output 'Installed. Replace your existing pinned/dock entry with ChatGPT.lnk in the installation directory.'
 Write-Output ('Installation directory: '+$target)
-Write-Output 'Experimental: cold opening performs one background restart; the first-open visibility issue remains under investigation.'
+Write-Output 'The worker never restarts the client. Unmodified Store/search entries cannot enable the theme on a cold start. See docs/OPERATIONS.md.'
