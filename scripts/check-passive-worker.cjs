@@ -9,7 +9,7 @@ assert(!/probe-original|recover-original|WindowActivator|revealPending|allowOneR
 assert(source.includes('spotlight'));
 async function run(items,expected){
  const reports=[];
- const context={roots:async()=>items,report:s=>reports.push(s)};
+ const context={roots:async()=>items,resumeUpdatedClient:async()=>false,report:s=>reports.push(s)};
  // No process/activation/filesystem API is available: any attempt must fail.
  vm.createContext(context);
  await vm.runInContext(source.slice(begin,end)+';observeUnavailable()',context);

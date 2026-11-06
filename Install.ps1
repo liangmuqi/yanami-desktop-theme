@@ -51,7 +51,7 @@ try {
 } finally {$writer.Dispose()}
 $link.IconLocation=(Join-Path $bin 'ChatGPT.ico')+',0';$link.Save()
 $service=New-Object -ComObject Schedule.Service;$service.Connect();$definition=$service.NewTask(0)
-$definition.RegistrationInfo.Description='Yanami appearance adapter. Never closes or restarts the official client.'
+$definition.RegistrationInfo.Description='Yanami appearance adapter. Resumes once after a verified official package update; ordinary connection failures remain passive.'
 $definition.Principal.UserId=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;$definition.Principal.LogonType=3;$definition.Principal.RunLevel=0
 $definition.Settings.Hidden=$true;$definition.Settings.DisallowStartIfOnBatteries=$false;$definition.Settings.StopIfGoingOnBatteries=$false;$definition.Settings.ExecutionTimeLimit='PT0S';$definition.Settings.MultipleInstances=2;$definition.Settings.RestartCount=2;$definition.Settings.RestartInterval='PT1M'
 $trigger=$definition.Triggers.Create(9);$trigger.UserId=$definition.Principal.UserId;$trigger.Enabled=$true
@@ -59,4 +59,4 @@ $action=$definition.Actions.Create(0);$action.Path=Join-Path $env:SystemRoot 'Sy
 $task=$service.GetFolder('\').RegisterTaskDefinition($taskName,$definition,6,$null,$null,3,$null);$null=$task.Run($null)
 Write-Output 'Installed. Replace your existing pinned/dock entry with ChatGPT.lnk in the installation directory.'
 Write-Output ('Installation directory: '+$target)
-Write-Output 'The worker never restarts the client. Unmodified Store/search entries cannot enable the theme on a cold start. See docs/OPERATIONS.md.'
+Write-Output 'A verified package update may require one automatic restart to restore theme arguments. Use the configured theme entry for normal cold starts. See docs/OPERATIONS.md.'

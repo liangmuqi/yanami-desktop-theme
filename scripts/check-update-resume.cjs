@@ -1,0 +1,21 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const source=fs.readFileSync(require.resolve('../src/worker.cjs'),'utf8');
+const begin=source.indexOf('async function resumeUpdatedClient(items){'),end=source.indexOf('// Ordinary connection failures',begin);
+assert(begin>0&&end>begin);
+let stored=null,restarts=0,activations=0,fail=false;
+const context={root:'state',__dirname:'src',path,config:{packageFullName:'new',appId:'official',port:49339,executable:'official.exe'},fs:{existsSync:()=>stored!==null,readFileSync:()=>JSON.stringify(stored),writeFileSync:(_,value)=>{stored=JSON.parse(value);}},ps:async()=>{restarts++;if(fail)throw Error('test restart failure');},execFile:async()=>{activations++;}};
+vm.createContext(context);vm.runInContext(source.slice(begin,end),context);
+const ordinary={pid:10,created:'test',debug:false,custom:false},reset=()=>{stored={packageFullName:'new',pending:true};};
+(async()=>{
+ assert.equal(await context.resumeUpdatedClient([ordinary]),false);assert.equal(restarts,0);
+ stored={packageFullName:'old',pending:true};assert.equal(await context.resumeUpdatedClient([ordinary]),false);
+ reset();for(const roots of [[],[ordinary,ordinary],[{...ordinary,custom:true}]])assert.equal(await context.resumeUpdatedClient(roots),false);
+ assert.equal(restarts,0);
+ assert.equal(await context.resumeUpdatedClient([{...ordinary,debug:true}]),false);assert.equal(stored.pending,false);assert.equal(restarts,0);
+ reset();assert.equal(await context.resumeUpdatedClient([ordinary]),true);assert.equal(restarts,1);assert.equal(activations,1);assert.equal(stored.state,'resumed');
+ assert.equal(await context.resumeUpdatedClient([ordinary]),false);assert.equal(restarts,1);
+ reset();fail=true;await assert.rejects(context.resumeUpdatedClient([ordinary]),/test restart failure/);
+ assert.equal(stored.pending,false);assert.equal(await context.resumeUpdatedClient([ordinary]),false);assert.equal(restarts,2);assert.equal(activations,1);
+ console.log('PASS: update version gate, no ordinary restart, correct launch stays untouched, successful and failed attempts never repeat.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

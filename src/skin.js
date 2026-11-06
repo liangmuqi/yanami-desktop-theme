@@ -1,5 +1,5 @@
 function installYanamiNative(assets,openings,gsap,timelines,startupId) {
-  if (window.__yanamiNative?.build==='approved-v3'&&window.__yanamiNative?.revision==='stable-v10') {window.__yanamiNative.startSession(startupId);return window.__yanamiNative.status();}
+  if (window.__yanamiNative?.build==='approved-v3'&&window.__yanamiNative?.revision==='layout-v11') {window.__yanamiNative.startSession(startupId);return window.__yanamiNative.status();}
   window.__yanamiNative?.remove();
   if(!document.body||!document.head)return {waitingForDocument:true};
   const composerSelector=':is(.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant])';
@@ -128,18 +128,19 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
     // Observe its outer box, which is unaffected by our own right padding.
     if(main!==observedMain){if(observedMain)resize.unobserve(observedMain);observedMain=main;if(main)resize.observe(main,{box:'border-box'});}
     const messages=!!main?.querySelector(messageSelector);
+    const filePreview=[...document.querySelectorAll('.bg-background-artifact-preview')].some(e=>{const r=e.getBoundingClientRect();return r.width>160&&r.height>100&&r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight&&getComputedStyle(e).visibility!=='hidden';});
     const selectedConversation=!!document.querySelector('aside.app-shell-left-panel [role="button"][aria-current="page"]');
-    const homeCandidate=!!(composer&&main&&!messages&&!selectedConversation);
+    const homeCandidate=!!(composer&&main&&!messages&&!selectedConversation&&!filePreview);
     if(!homeCandidate){homeCandidateSince=0;clearTimeout(homeTimer);homeTimer=0;}
     else if(!homeCandidateSince)homeCandidateSince=performance.now();
     const homeReady=homeCandidate&&performance.now()-homeCandidateSince>=180;
     if(homeCandidate&&!homeReady&&!homeTimer)homeTimer=setTimeout(()=>{homeTimer=0;schedule();},180);
-    const signature=()=>{const c=composer?.getBoundingClientRect(),m=main?.getBoundingClientRect();return [innerWidth,innerHeight,c?.x,c?.width,m?.x,m?.width,messages,selectedConversation,homeReady,ready,prefs.show,prefs.strength,prefs.theme,prefs.art,playing].join(':');};
+    const signature=()=>{const c=composer?.getBoundingClientRect(),m=main?.getBoundingClientRect();return [innerWidth,innerHeight,c?.x,c?.width,m?.x,m?.width,messages,selectedConversation,filePreview,homeReady,ready,prefs.show,prefs.strength,prefs.theme,prefs.art,playing].join(':');};
     const inputSignature=signature();
     if(force!==true&&lastLayout?.main===main&&lastLayout?.composer===composer&&lastLayout?.signature===inputSignature){positionTools();if(!usageBubble.hidden)positionUsage();maybeAutoplay();return;}
     layoutRuns++;restoreMarks();
     home=homeReady;visible=false;
-    if(composer&&main&&prefs.show){
+    if(composer&&main&&prefs.show&&!filePreview){
       const before=main.getBoundingClientRect();
       const available=innerWidth-before.left;
       const narrow=available<920;
@@ -169,7 +170,7 @@ function installYanamiNative(assets,openings,gsap,timelines,startupId) {
         if(innerWidth-left<(narrow?100:180)){visible=false;restoreMarks();}
       }
     }
-    character.style.visibility=visible&&!playing?'visible':'hidden';homeCopy.style.display=home&&visible&&!playing?'block':'none';q('tools').style.display=main?'flex':'none';positionTools();maybeAutoplay();
+    character.style.visibility=visible&&!playing?'visible':'hidden';homeCopy.style.display=home&&visible&&!playing?'block':'none';q('tools').style.display=main&&!filePreview?'flex':'none';positionTools();maybeAutoplay();
     if(!visible||playing){if(!usageBubble.hidden)closeUsage();}else positionUsage();
     lastLayout={main,composer,signature:signature()};
   }
@@ -322,7 +323,7 @@ function setTheme(theme){prefs.theme=theme;prefs.art=assets[prefs[theme+'Art']]?
       clearTimeout(panelResizeTimer);panelResizeTimer=setTimeout(()=>{panelResizeTimer=0;schedule();},100);
     }else schedule();
   });resize.observe(document.documentElement);
-  window.__yanamiNative={version:2,build:'approved-v3',revision:'stable-v10',status,remove,play,prepareOpening,startSession,setTheme,receiveUsage,receiveAsset};selectArt();schedule();maybeAutoplay();
+  window.__yanamiNative={version:2,build:'approved-v3',revision:'layout-v11',status,remove,play,prepareOpening,startSession,setTheme,receiveUsage,receiveAsset};selectArt();schedule();maybeAutoplay();
 
   return status();
 }

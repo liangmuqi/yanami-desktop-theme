@@ -30,6 +30,7 @@ async function refreshClient(force=false){
  let result;try{result=await binding.refresh(force);clientValidated=true;}catch(error){clientValidated=false;throw error;}if(!result.changed)return;
  for(const connection of connections.values())connection.ws.close();connections.clear();activePid=null;config=result.config;
  fs.writeFileSync(path.join(root,'client-rebind.json'),JSON.stringify({at:new Date().toISOString(),previousPackage:result.previousPackage,packageFullName:config.packageFullName,version:result.version,signatureVerified:true},null,2));
+ fs.writeFileSync(path.join(root,'update-resume.json'),JSON.stringify({packageFullName:config.packageFullName,pending:true}));
  report({state:'client-version-rebound',version:result.version});
 }
 function report(value){const text=JSON.stringify(value);if(text===lastReport)return;lastReport=text;fs.writeFileSync(path.join(root,'worker-status.json'),JSON.stringify({at:new Date().toISOString(),workerPid:process.pid,...value},null,2));}
@@ -54,7 +55,7 @@ async function connect(target){
 }
 async function apply(target){
  const c=connections.get(target.id)||await connect(target);
- const snapshot=await c.evaluate(`({ready:document.visibilityState==='visible'&&!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='stable-v10',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
+ const snapshot=await c.evaluate(`({ready:document.visibilityState==='visible'&&!!document.body&&!!document.head&&innerWidth>650&&innerHeight>400,installed:window.__yanamiNative?.revision==='layout-v11',disabled:localStorage.getItem('yanami-native-disabled')==='1',art:(()=>{try{return JSON.parse(localStorage.getItem('yanami-native-theme-v1')||'{}').art||'profile';}catch{return 'profile';}})()})`);
  if(!snapshot?.ready)return {state:'waiting-for-main-window'};
  if(snapshot.disabled)return {state:'disabled-by-user'};
  if(!snapshot.installed){
@@ -66,9 +67,24 @@ async function apply(target){
  }
  return c.evaluate(`(()=>{const s=window.__yanamiNative?.status();return {state:'active',skin:s,composerCount:document.querySelectorAll('.composer-surface-chrome,[class*="_ComposerLayoutRoot_"],[data-composer-surface-variant][data-composer-radius-variant]').length,globalInputBlocked:document.body.inert||document.documentElement.inert,hostPointerEvents:getComputedStyle(document.getElementById('yanami-native-theme')).pointerEvents};})()`);
 }
-// Observe only: connection failure must never close, hide or restart the client.
+async function resumeUpdatedClient(items){
+ const file=path.join(root,'update-resume.json');
+ if(!fs.existsSync(file))return false;
+ const update=JSON.parse(fs.readFileSync(file,'utf8'));
+ if(!update.pending||update.packageFullName!==config.packageFullName||items.length!==1||items[0].custom)return false;
+ const item=items[0];update.pending=false;update.pid=item.pid;update.at=new Date().toISOString();update.state=item.debug?'already-connected':'restarting';
+ fs.writeFileSync(file,JSON.stringify(update));
+ if(item.debug)return false;
+ const quote=value=>"'"+String(value).replace(/'/g,"''")+"'";
+ await ps(`$p=Get-CimInstance Win32_Process -Filter 'ProcessId=${Number(item.pid)}';if(!$p -or $p.ExecutablePath -ne ${quote(config.executable)} -or $p.CreationDate.ToUniversalTime().ToString('o') -ne ${quote(item.created)}){throw 'Updated process changed before restart'};$client=Get-Process -Id $p.ProcessId;$null=$client.CloseMainWindow();if(!$client.WaitForExit(2500)){Stop-Process -InputObject $client;if(!$client.WaitForExit(5000)){throw 'Updated client did not exit'}}`);
+ await execFile(path.join(__dirname,'../bin/PackageActivator.exe'),[config.appId,'--remote-debugging-address=127.0.0.1 --remote-debugging-port='+config.port,path.join(root,'broker-activation.json')],{windowsHide:true,timeout:15000});
+ update.state='resumed';fs.writeFileSync(file,JSON.stringify(update));
+ return true;
+}
+// Ordinary connection failures remain passive; only a verified update may resume once.
 async function observeUnavailable(){
  const items=await roots();
+ if(await resumeUpdatedClient(items))return 'debug';
  if(!items.length){report({state:'idle-client-closed',automaticRestarts:0});return 'closed';}
  if(items.length!==1){report({state:'paused-unexpected-instance-count',rootCount:items.length,automaticRestarts:0});return 'other';}
  const item=items[0];
@@ -85,7 +101,7 @@ async function main(){
    if(!clientValidated)await refreshClient();
    await handleLaunchRequest();
    const response=await fetch('http://127.0.0.1:'+config.port+'/json/list',{signal:AbortSignal.timeout(1500)});if(!response.ok)throw Error('Endpoint unavailable.');const list=await response.json();
-   if(activePid===null)activePid=await verifyOwner();
+   if(activePid===null){activePid=await verifyOwner();await resumeUpdatedClient([{pid:activePid,debug:true}]);}
    const targets=list.filter(t=>{try{const u=new URL(t.url);return t.type==='page'&&u.protocol==='app:'&&u.hostname==='-'&&u.pathname==='/index.html'&&!/avatar|quick.chat|detached|mini|popover|notification|spotlight/i.test(u.searchParams.get('initialRoute')||'');}catch{return false;}});
    const status=[];for(const target of targets)status.push(await apply(target));failures=0;report({state:status.some(s=>s.state==='active')?'active':'waiting-for-main-window',applicationPid:activePid,reports:status});
    const settling=!status.length||status.some(s=>s.state==='waiting-for-main-window'||s.skin?.playing);
